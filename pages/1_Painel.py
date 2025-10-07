@@ -465,9 +465,13 @@ if model is not None and not df.empty:
             
             # Container para centralizar o input
             st.sidebar.markdown('<div class="input-container">', unsafe_allow_html=True)
+            # Calcular limites de ±10% do preço atual
+            min_price = current_price * 0.9  # -10%
+            max_price = current_price * 1.1  # +10%
             new_price = st.sidebar.number_input(
                 "Preço (R$)",
-                min_value=0.01,
+                min_value=min_price,
+                max_value=max_price,
                 value=float(current_price),
                 step=0.01,
                 format="%.2f",
