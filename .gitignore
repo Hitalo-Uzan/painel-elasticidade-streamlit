@@ -1,0 +1,14 @@
+# Ignorar a pasta de segredos do Streamlit
+.streamlit/secrets.toml
+
+# Ignorar o banco de dados local (boa prática)
+users.db
+
+# Arquivos de ambiente Python
+.env
+.venv
+venv/
+__pycache__/
+
+# Arquivos de sistema operacional
+.DS_Store
