@@ -105,8 +105,8 @@ def generate_price_sensitivity_curve(df, selected_product, model, model_columns,
         # Obter preço atual
         current_price = product_data['PRECO_ATUAL'].iloc[0]
         
-        # Gerar range de preços (-20% a +20%)
-        price_range = np.linspace(current_price * 0.8, current_price * 1.2, num_points)
+        # Gerar range de preços (-50% a +50%)
+        price_range = np.linspace(current_price * 0.5, current_price * 1.5, num_points)
         
         sensitivity_data = []
         
@@ -128,13 +128,13 @@ def generate_price_sensitivity_curve(df, selected_product, model, model_columns,
             pred_real = np.expm1(pred_log).round().astype(int)
             pred_real[pred_real < 0] = 0
             
-            # Calcular receita
-            receita = price * pred_real[0]
+            # Calcular percentual de variação do preço
+            price_change_percent = ((price - current_price) / current_price) * 100
             
             sensitivity_data.append({
                 'preco': price,
                 'vendas': pred_real[0],
-                'receita': receita
+                'Percentual de Preço': price_change_percent
             })
         
         return pd.DataFrame(sensitivity_data)
@@ -465,13 +465,9 @@ if model is not None and not df.empty:
             
             # Container para centralizar o input
             st.sidebar.markdown('<div class="input-container">', unsafe_allow_html=True)
-            # Calcular limites de ±10% do preço atual
-            min_price = current_price * 0.9  # -10%
-            max_price = current_price * 1.1  # +10%
             new_price = st.sidebar.number_input(
                 "Preço (R$)",
-                min_value=min_price,
-                max_value=max_price,
+                min_value=0.0,
                 value=float(current_price),
                 step=0.01,
                 format="%.2f",
@@ -545,22 +541,26 @@ if model is not None and not df.empty:
         sensitivity_curve_data = generate_price_sensitivity_curve(df, selected_product, model, model_columns, 20)
         
         if sensitivity_curve_data is not None:
-            # Gráfico principal: Preço (X) vs Vendas Previstas (Y)
+            # Gráfico principal: Variação % Preço (X) vs Vendas Previstas (Y)
             fig_main = px.line(
                 sensitivity_curve_data,
-                x='preco',
+                x='Percentual de Preço',
                 y='vendas',
                 title=f"Curva de Elasticidade - {selected_product}",
                 markers=True
             )
             
-            # Destacar ponto atual
-            current_sales = prediction['vendas_atuais']
-            current_price = prediction['preco_atual']
+            # ADICIONE ESTA LINHA PARA FORÇAR A FORMATAÇÃO DO TOOLTIP
+            fig_main.update_traces(hovertemplate='Percentual de Preço=%{x:.2f}%<br>vendas=%{y}<extra></extra>')
+
+            # Destacar ponto atual (0% de variação) - usar valor da curva
+            # Encontrar o ponto mais próximo de 0% de variação
+            closest_to_zero = sensitivity_curve_data.iloc[(sensitivity_curve_data['Percentual de Preço'] - 0).abs().argsort()[:1]]
+            current_sales_curve = closest_to_zero['vendas'].iloc[0]
             
             fig_main.add_trace(go.Scatter(
-                x=[current_price],
-                y=[current_sales],
+                x=[0],
+                y=[current_sales_curve],
                 mode='markers',
                 marker=dict(size=15, color='red', symbol='star'),
                 name='Situação Atual'
@@ -568,11 +568,10 @@ if model is not None and not df.empty:
             
             # Destacar ponto com novo preço se houver mudança
             if price_change != 0:
-                new_price = prediction['preco_novo']
                 new_sales = prediction['vendas_preditas']
                 
                 fig_main.add_trace(go.Scatter(
-                    x=[new_price],
+                    x=[price_change],
                     y=[new_sales],
                     mode='markers',
                     marker=dict(size=15, color='green', symbol='star'),
@@ -580,7 +579,7 @@ if model is not None and not df.empty:
                 ))
             
             fig_main.update_layout(
-                xaxis_title="Preço (R$)",
+                xaxis_title="Balanço de Crescimento",
                 yaxis_title="Vendas Previstas",
                 showlegend=True,
                 height=500
