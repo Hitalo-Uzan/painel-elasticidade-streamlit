@@ -102,8 +102,9 @@ def generate_price_sensitivity_curve(df, selected_product, model, model_columns,
         if product_data.empty:
             return None
         
-        # Obter preço atual
+        # Obter preço atual e vendas atuais
         current_price = product_data['PRECO_ATUAL'].iloc[0]
+        current_sales = product_data['VENDAS_PREVISTAS'].iloc[0]
         
         # Gerar range de preços (-50% a +50%)
         price_range = np.linspace(current_price * 0.5, current_price * 1.5, num_points)
@@ -128,13 +129,13 @@ def generate_price_sensitivity_curve(df, selected_product, model, model_columns,
             pred_real = np.expm1(pred_log).round().astype(int)
             pred_real[pred_real < 0] = 0
             
-            # Calcular percentual de variação do preço
-            price_change_percent = ((price - current_price) / current_price) * 100
+            # Calcular percentual de variação das vendas
+            sales_change_percent = ((pred_real[0] - current_sales) / current_sales) * 100 if current_sales > 0 else 0
             
             sensitivity_data.append({
                 'preco': price,
                 'vendas': pred_real[0],
-                'Percentual de Preço': price_change_percent
+                'Percentual de Vendas': sales_change_percent
             })
         
         return pd.DataFrame(sensitivity_data)
@@ -353,6 +354,19 @@ st.markdown("""
         font-weight: 600;
         color: #ffffff;
     }
+
+    /* --- CÓDIGO CORRETO PARA CENTRALIZAR OS BLOCOS DE KPI --- */
+    [data-testid="stMetric"] {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    [data-testid="stMetricLabel"] {
+        text-align: center;
+    }
+
+
 </style>
 
 """, unsafe_allow_html=True)
@@ -541,26 +555,22 @@ if model is not None and not df.empty:
         sensitivity_curve_data = generate_price_sensitivity_curve(df, selected_product, model, model_columns, 20)
         
         if sensitivity_curve_data is not None:
-            # Gráfico principal: Variação % Preço (X) vs Vendas Previstas (Y)
+            # Gráfico principal: Preço (X) vs Percentual de Vendas (Y)
             fig_main = px.line(
                 sensitivity_curve_data,
-                x='Percentual de Preço',
-                y='vendas',
-                title=f"Curva de Elasticidade - {selected_product}",
+                x='preco',
+                y='Percentual de Vendas',
+                title=f"Crescimento X Preço - {selected_product}",
                 markers=True
             )
             
-            # ADICIONE ESTA LINHA PARA FORÇAR A FORMATAÇÃO DO TOOLTIP
-            fig_main.update_traces(hovertemplate='Percentual de Preço=%{x:.2f}%<br>vendas=%{y}<extra></extra>')
-
-            # Destacar ponto atual (0% de variação) - usar valor da curva
-            # Encontrar o ponto mais próximo de 0% de variação
-            closest_to_zero = sensitivity_curve_data.iloc[(sensitivity_curve_data['Percentual de Preço'] - 0).abs().argsort()[:1]]
-            current_sales_curve = closest_to_zero['vendas'].iloc[0]
+            # Destacar ponto atual (preço atual)
+            current_price = prediction['preco_atual']
+            current_sales_change = 0  # 0% de variação na situação atual
             
             fig_main.add_trace(go.Scatter(
-                x=[0],
-                y=[current_sales_curve],
+                x=[current_price],
+                y=[current_sales_change],
                 mode='markers',
                 marker=dict(size=15, color='red', symbol='star'),
                 name='Situação Atual'
@@ -568,19 +578,23 @@ if model is not None and not df.empty:
             
             # Destacar ponto com novo preço se houver mudança
             if price_change != 0:
-                new_sales = prediction['vendas_preditas']
+                new_price = prediction['preco_novo']
+                new_sales_change = prediction['mudanca_vendas_percent']
                 
                 fig_main.add_trace(go.Scatter(
-                    x=[price_change],
-                    y=[new_sales],
+                    x=[new_price],
+                    y=[new_sales_change],
                     mode='markers',
                     marker=dict(size=15, color='green', symbol='star'),
                     name='Cenário Simulado'
                 ))
             
+            # Configurar formatação do tooltip
+            fig_main.update_traces(hovertemplate='Preço=R$ %{x:.2f}<br>Percentual de Vendas=%{y:.2f}%<extra></extra>')
+            
             fig_main.update_layout(
-                xaxis_title="Balanço de Crescimento",
-                yaxis_title="Vendas Previstas",
+                xaxis_title="Preço (R$)",
+                yaxis_title="Crescimento Percentual",
                 showlegend=True,
                 height=500
             )
@@ -592,7 +606,7 @@ if model is not None and not df.empty:
         # KPIs Principais
         st.header("📈 Indicadores Principais")
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns([1, 1, 1])
         
         with col1:
             st.metric(
@@ -603,23 +617,25 @@ if model is not None and not df.empty:
         
         with col2:
             st.metric(
-                label="📦 Vendas Atuais",
-                value=f"{prediction['vendas_atuais']:,.0f}",
-                delta=f"{prediction['mudanca_vendas']:,.0f}" if price_change != 0 else None
-            )
-        
-        with col3:
-            st.metric(
                 label="💵 Receita Atual",
                 value=f"R$ {prediction['receita_atual']:,.2f}",
                 delta=f"R$ {prediction['mudanca_receita']:,.2f}" if price_change != 0 else None
             )
         
-        with col4:
+        with col3:
+            # Mostrar 0% se não há mudança de preço, senão mostrar o crescimento
+            if price_change == 0:
+                crescimento_value = "0%"
+                delta = None
+            else:
+                crescimento_value = f"{prediction['mudanca_vendas_percent']:.1f}%"
+                # Usar delta para colorir: positivo = verde, negativo = vermelho
+                delta = f"{prediction['mudanca_vendas_percent']:.1f}%"
+            
             st.metric(
-                label="🎯 Previsão",
-                value=f"{prediction['vendas_preditas']:,.0f}",
-                delta=f"{prediction['mudanca_vendas_percent']:.1f}%" if price_change != 0 else None,
+                label="🎯 Crescimento",
+                value=crescimento_value,
+                delta=delta
             )
         
         
